@@ -1,14 +1,15 @@
-import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn, Unique } from 'typeorm';
 
 @Entity('SYSTEM_USER')
+@Unique('UQ_SYSTEM_USER_email', ['email'])
 export class User {
-  @PrimaryGeneratedColumn()
+  @PrimaryGeneratedColumn({ primaryKeyConstraintName: 'PK_SYSTEM_USER' })
   id: number;
 
   @Column({ type: 'varchar', length: 120 })
   name: string;
 
-  @Column({ type: 'varchar', length: 254, unique: true })
+  @Column({ type: 'varchar', length: 254 })
   email: string;
 
   @Column({ type: 'varchar', length: 60, select: false })

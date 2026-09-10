@@ -15,7 +15,7 @@ export enum Severity {
 @Entity('WATER_REPORT')
 @Check('CHK_WATER_REPORT_severity', `"severity" IN ('low', 'medium', 'high')`)
 export class Report {
-  @PrimaryGeneratedColumn()
+  @PrimaryGeneratedColumn({ primaryKeyConstraintName: 'PK_WATER_REPORT' })
   id: number;
 
   @Column({ type: 'varchar', length: 500 })
