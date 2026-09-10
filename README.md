@@ -189,8 +189,4 @@ Se fija `multer` 2.3.0 mediante `overrides` para resolver los avisos de segurida
 | Correo no visible                         | Revisa spam y la cuenta destinataria. Aceptación SMTP y recepción son evidencias distintas.                                                                 |
 | Respuesta 400                             | Revisa formatos, severidad y campos extra. Las contraseñas no se normalizan ni recortan.                                                                    |
 | Correo ya registrado                      | Usa otro correo o inicia sesión. No borres usuarios para resolver un registro duplicado.                                                                    |
-| Generar migración no detecta cambios      | Es normal si las entidades ya coinciden con el esquema.                                                                                                     |
-
-## Video y evidencias
-
-Consulta [guion de video](docs/guion-video.md) para una demostración de unos 5 minutos. Los resultados ejecutados se registran en [validación](docs/validacion.md). No se debe afirmar que el correo llegó ni que el remoto se actualizó sin la evidencia correspondiente.
+| Generar migración no detecta cambios      | Es normal si las entidades ya coinciden con el esquema.                                                                                              
