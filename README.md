@@ -31,7 +31,7 @@ Los controladores no acceden a TypeORM. Se usa `synchronize: false` en NestJS y 
 Node.js 20 o superior (validado con Node 24), npm, Git, Docker Desktop con motor activo o PostgreSQL 17 local, y una cuenta Gmail con contraseña de aplicación.
 
 ```bash
-git clone https://github.com/512-JoseVC-ComputoEnLaNube/AguaFixApi.git
+git clone https://github.com/512-userVC-ComputoEnLaNube/AguaFixApi.git
 cd AguaFixApi
 npm ci
 ```
@@ -72,10 +72,10 @@ Configura en `.env`:
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
 SMTP_SECURE=true
-SMTP_USER=josestudente06@gmail.com
+SMTP_USER=userstudente06@gmail.com
 SMTP_PASSWORD=
-MAIL_FROM=josestudente06@gmail.com
-MAINTENANCE_EMAIL=josestudente06@gmail.com
+MAIL_FROM=userstudente06@gmail.com
+MAINTENANCE_EMAIL=userstudente06@gmail.com
 ```
 
 El campo de contraseña se muestra vacío intencionalmente. En tu cuenta Google, activa la verificación en dos pasos y abre [Contraseñas de aplicación](https://myaccount.google.com/apppasswords). Crea una para AguaFixApi y pega el valor únicamente en el `.env` local, en una sola línea, eliminando espacios normales, espacios no separables, tabulaciones y saltos de línea. No uses tu contraseña habitual. Algunas cuentas administradas o configuraciones de seguridad no ofrecen esta opción; consulta la [ayuda oficial de Google](https://support.google.com/accounts/answer/185833).
@@ -108,8 +108,8 @@ Los bodies se validan mediante DTOs. Los campos extra se rechazan con 400. Se re
 
 ```json
 {
-  "name": "José Alberto",
-  "email": "jose@example.com",
+  "name": "Juan",
+  "email": "user@example.com",
   "password": "Password123",
   "isNotificationEnabled": true
 }
@@ -120,7 +120,7 @@ La contraseña de este ejemplo es ficticia. `isNotificationEnabled` es opcional 
 ### Login
 
 ```json
-{ "email": "jose@example.com", "password": "Password123" }
+{ "email": "user@example.com", "password": "Password123" }
 ```
 
 Devuelve `{ "message": "Inicio de sesión exitoso", "user": { ... } }`. Un correo inexistente o contraseña equivocada produce `BadRequestException` con el mensaje exacto `Correo o contraseña incorrectos`.
@@ -145,11 +145,11 @@ Si falla el correo después del guardado, la respuesta 503 contiene `code: REPOR
 ```bash
 curl -i -X POST http://localhost:3000/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"name":"José Alberto","email":"jose@example.com","password":"Password123","isNotificationEnabled":true}'
+  -d '{"name":"user Alberto","email":"user@example.com","password":"Password123","isNotificationEnabled":true}'
 
 curl -i -X POST http://localhost:3000/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"jose@example.com","password":"Password123"}'
+  -d '{"email":"user@example.com","password":"Password123"}'
 
 curl -i -X POST http://localhost:3000/reports \
   -H 'Content-Type: application/json' \
