@@ -1,0 +1,7 @@
+services:
+  migrate:
+    image: aguafix-api:local
+    pull_policy: never
+  api:
+    image: aguafix-api:local
+    pull_policy: never

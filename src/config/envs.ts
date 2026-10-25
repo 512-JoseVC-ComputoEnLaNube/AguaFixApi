@@ -21,4 +21,8 @@ export const envs = {
   },
   mailFrom: env.get('MAIL_FROM').required().asEmailString(),
   maintenanceEmail: env.get('MAINTENANCE_EMAIL').required().asEmailString(),
+  storage: {
+    region: env.get('AWS_REGION').asString(),
+    bucket: env.get('AWS_S3_BUCKET').asString(),
+  },
 };

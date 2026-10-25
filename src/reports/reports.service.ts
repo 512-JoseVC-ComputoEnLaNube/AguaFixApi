@@ -8,6 +8,8 @@ import { EmailService } from '../email/email.service';
 import { CreateReportDto } from './dto/create-report.dto';
 import { generateReportTemplate } from './templates/report.template';
 import { envs } from '../config/envs';
+import { StorageService } from '../storage/storage.service';
+import { Report } from './entities/report.entity';
 
 @Injectable()
 export class ReportsService {
@@ -15,15 +17,25 @@ export class ReportsService {
   constructor(
     private readonly reportsRepository: ReportsRepository,
     private readonly emailService: EmailService,
+    private readonly storageService: StorageService,
   ) {}
 
-  async create(dto: CreateReportDto) {
-    const report = await this.reportsRepository.create(dto);
+  async create(dto: CreateReportDto, photo: Express.Multer.File) {
+    const photoUrl = await this.storageService.uploadFile(photo, 'reports');
+    let report: Report;
+    try {
+      report = await this.reportsRepository.create(dto, photoUrl);
+    } catch {
+      await this.storageService.deleteFile(photoUrl);
+      throw new ServiceUnavailableException(
+        'No se pudo guardar el reporte; revisa la base de datos',
+      );
+    }
     try {
       await this.emailService.sendEmail(
         envs.maintenanceEmail,
         'Nuevo reporte de fuga de agua',
-        generateReportTemplate(dto),
+        generateReportTemplate(dto, photoUrl),
       );
     } catch {
       this.logger.error(
@@ -40,7 +52,8 @@ export class ReportsService {
     return report;
   }
 
-  findAll() {
-    return this.reportsRepository.findAll();
+  async findAll() {
+    const reports = await this.reportsRepository.findAll();
+    return reports.map((report) => ({ ...report, repairPhotoUrl: null }));
   }
 }

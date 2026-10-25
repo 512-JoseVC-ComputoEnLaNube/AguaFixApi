@@ -1,0 +1,114 @@
+name: Publicar imagen Docker
+
+# Solo un push a main publica en Docker Hub.
+# workflow_dispatch y las ramas prueba/** construyen y verifican la imagen sin publicarla.
+on:
+  push:
+    branches: [main, 'prueba/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGEN_PRUEBA: aguafix-api:ci
+  IMAGEN_PUBLICADA: josep210d/aguafix-api:latest
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: aguafix_ci
+          POSTGRES_PASSWORD: aguafix_ci_desechable
+          POSTGRES_DB: aguafix_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aguafix_ci -d aguafix_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v6
+
+      - name: Preparar Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Construir imagen de verificación
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ env.IMAGEN_PRUEBA }}
+
+      - name: Verificar contenido de la imagen
+        run: |
+          docker run --rm --entrypoint node "$IMAGEN_PRUEBA" -e "
+            const fs = require('fs');
+            for (const p of ['dist/main.js', 'dist/database/data-source.js'])
+              if (!fs.existsSync(p)) { console.error('Falta ' + p); process.exit(1); }
+            for (const p of ['.env', 'compose.yaml', 'compose.local.yaml', 'docker-compose.yml'])
+              if (fs.existsSync(p)) { console.error('No debe incluirse ' + p); process.exit(1); }
+            console.log('Contenido correcto');
+          "
+
+      - name: Probar migraciones y arranque de la API
+        # Valores desechables: no se conecta a SMTP ni a S3 reales.
+        run: |
+          cat > ci.env <<'VARS'
+          DB_HOST=127.0.0.1
+          DB_PORT=5432
+          DB_USERNAME=aguafix_ci
+          DB_PASSWORD=aguafix_ci_desechable
+          DB_NAME=aguafix_ci
+          SMTP_HOST=smtp.invalid
+          SMTP_PORT=465
+          SMTP_SECURE=true
+          SMTP_USER=ci@example.com
+          SMTP_PASSWORD=desechable
+          MAIL_FROM=ci@example.com
+          MAINTENANCE_EMAIL=ci@example.com
+          PORT=3000
+          VARS
+          docker run --rm --network host --env-file ci.env "$IMAGEN_PRUEBA" npm run migration:run:prod
+          docker run -d --name aguafix-ci --network host --env-file ci.env "$IMAGEN_PRUEBA"
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/reports > /dev/null; then break; fi
+            sleep 1
+          done
+          echo "GET /reports:"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/reports)" = 200
+          echo "POST /reports sin foto (se espera 400):"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -F address='Calle de prueba 123' -F description='Prueba CI' \
+            -F severity=high -F reporterPhone=4771234567 \
+            http://127.0.0.1:3000/reports)" = 400
+          echo "Arranque correcto"
+
+      - name: Registros de la API
+        if: always()
+        run: docker logs aguafix-ci 2>&1 | tail -n 50 || true
+
+      - name: Iniciar sesión en Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Construir y publicar
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGEN_PUBLICADA }}

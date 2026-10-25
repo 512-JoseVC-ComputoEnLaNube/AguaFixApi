@@ -5,3 +5,9 @@ coverage/
 .env.*
 !.env.example
 *.log
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+.npmrc

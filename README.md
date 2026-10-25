@@ -1,13 +1,16 @@
 # AguaFixApi
 
-API para que ciudadanos reporten fugas de agua en la vía pública. Valida el reporte, lo guarda en PostgreSQL y envía una tarjeta HTML a mantenimiento mediante Gmail SMTP.
+API para que ciudadanos reporten fugas de agua en la vía pública. Valida el reporte y su foto, sube la imagen a S3, guarda el reporte en PostgreSQL y envía una tarjeta HTML a mantenimiento mediante Gmail SMTP.
+
+La [guía del segundo parcial](docs/parcial-ii.md) incluye configuración de S3, pruebas paso a paso en Windows/Postman, Docker, Secrets de GitHub, publicación y guion de video.
 
 ## Tecnologías y arquitectura
 
-NestJS 11, TypeScript, PostgreSQL 17, TypeORM 0.3, migraciones, `dotenv`, `env-var`, `bcryptjs`, Nodemailer, `class-validator` y `class-transformer`. Pruebas con Jest y Supertest; formato con Prettier y análisis con ESLint.
+NestJS 11, TypeScript, PostgreSQL 17, TypeORM 0.3, migraciones, AWS SDK v3 para S3, `dotenv`, `env-var`, `bcryptjs`, Nodemailer, `class-validator` y `class-transformer`. Pruebas con Jest y Supertest; formato con Prettier y análisis con ESLint.
 
 ```text
 Controller → Service → Repository → PostgreSQL
+                  ├→ StorageService → S3
                   └→ plantilla HTML → EmailService → Gmail SMTP
 
 src/
@@ -15,23 +18,24 @@ src/
 ├── users/      # CreateUserDto, User, UsersRepository y UsersService
 ├── reports/    # DTO, Report, repository, service, controller y templates/
 ├── email/      # EmailService independiente
+├── storage/    # S3 y validación de fotos
 ├── config/     # envs.ts y ValidationPipe compartido
 ├── database/   # opciones compartidas y data-source.ts
 ├── migrations/ # InitialSchema1789080000000
 ├── app.module.ts
 └── main.ts
 test/           # pruebas HTTP con PostgreSQL real y SMTP simulado
-docs/           # guion de video y evidencia de validación
+docs/           # guía, guion y validación del segundo parcial
 ```
 
 Los controladores no acceden a TypeORM. Se usa `synchronize: false` en NestJS y en el data source; las tablas se crean solamente mediante migraciones. Los endpoints son públicos por alcance de la práctica: el login verifica credenciales y no genera JWT ni sesiones.
 
 ## Requisitos e instalación
 
-Node.js 20 o superior (validado con Node 24), npm, Git, Docker Desktop con motor activo o PostgreSQL 17 local, y una cuenta Gmail con contraseña de aplicación.
+Node.js 22 o superior, npm, Git, PostgreSQL 17 local (o Docker Desktop con motor activo), un bucket S3 configurado y una cuenta Gmail con contraseña de aplicación.
 
 ```bash
-git clone https://github.com/512-userVC-ComputoEnLaNube/AguaFixApi.git
+git clone https://github.com/512-JoseVC-ComputoEnLaNube/AguaFixApi.git
 cd AguaFixApi
 npm ci
 ```
@@ -43,8 +47,8 @@ Copia `.env.example` a `.env`: `cp .env.example .env` en Bash o `Copy-Item .env.
 Define `DB_HOST=localhost`, `DB_PORT=5432`, `DB_USERNAME=postgres`, `DB_NAME=aguafix` y una contraseña local en `DB_PASSWORD`. Compose usa los mismos valores y mantiene los datos en un volumen. El puerto se publica únicamente en la interfaz local.
 
 ```bash
-docker compose up -d
-docker compose ps
+docker compose -f compose.yaml up -d postgres
+docker compose -f compose.yaml ps
 npm run migration:run
 npm run migration:show
 ```
@@ -64,6 +68,8 @@ npm run migration:revert
 
 Los scripts usan TypeScript y dependencias de desarrollo. Con un build y dependencias de producción instaladas, se puede ejecutar `node node_modules/typeorm/cli.js migration:run -d dist/database/data-source.js`.
 
+La migración nueva `AddReportPhoto1792800000000` agrega `photoUrl` nullable para conservar los reportes históricos. Su reversión elimina únicamente esa columna y sus enlaces. La foto es obligatoria para nuevos reportes en el endpoint. En Docker, el servicio `migrate` ejecuta `npm run migration:run:prod` antes de iniciar la API.
+
 ## Gmail SMTP
 
 Configura en `.env`:
@@ -72,10 +78,10 @@ Configura en `.env`:
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
 SMTP_SECURE=true
-SMTP_USER=userstudente06@gmail.com
+SMTP_USER=your_email@gmail.com
 SMTP_PASSWORD=
-MAIL_FROM=userstudente06@gmail.com
-MAINTENANCE_EMAIL=userstudente06@gmail.com
+MAIL_FROM=your_email@gmail.com
+MAINTENANCE_EMAIL=your_email@gmail.com
 ```
 
 El campo de contraseña se muestra vacío intencionalmente. En tu cuenta Google, activa la verificación en dos pasos y abre [Contraseñas de aplicación](https://myaccount.google.com/apppasswords). Crea una para AguaFixApi y pega el valor únicamente en el `.env` local, en una sola línea, eliminando espacios normales, espacios no separables, tabulaciones y saltos de línea. No uses tu contraseña habitual. Algunas cuentas administradas o configuraciones de seguridad no ofrecen esta opción; consulta la [ayuda oficial de Google](https://support.google.com/accounts/answer/185833).
@@ -127,14 +133,9 @@ Devuelve `{ "message": "Inicio de sesión exitoso", "user": { ... } }`. Un corre
 
 ### Crear reporte
 
-```json
-{
-  "address": "Blvd. Campestre 1203, León, Guanajuato",
-  "description": "Se observa una fuga continua junto a la banqueta.",
-  "severity": "high",
-  "reporterPhone": "4771234567"
-}
-```
+Usa `multipart/form-data` con `address`, `description`, `severity` y `reporterPhone` como texto, y un archivo obligatorio llamado `photo`. Se aceptan JPEG, PNG y WebP hasta 5 MiB; se verifica el contenido y se genera una clave única bajo `reports/` en S3.
+
+La respuesta incluye `photoUrl`. El listado agrega también `repairPhotoUrl: null`, porque no hay un flujo de fotos de reparación. Los reportes históricos conservan `photoUrl: null`. La [guía de S3](docs/parcial-ii.md#configurar-s3) explica los permisos requeridos para que el enlace sea accesible al destinatario.
 
 `severity` acepta únicamente `low`, `medium` o `high`. El cliente no proporciona `id`, `isResolved` ni `createdAt`. La API genera estos campos y establece `isResolved=false`. El correo escapa `&`, `<`, `>`, comillas simples y dobles para que la entrada ciudadana se muestre como texto.
 
@@ -145,20 +146,23 @@ Si falla el correo después del guardado, la respuesta 503 contiene `code: REPOR
 ```bash
 curl -i -X POST http://localhost:3000/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"name":"user Alberto","email":"user@example.com","password":"Password123","isNotificationEnabled":true}'
+  -d '{"name":"Juan","email":"user@example.com","password":"Password123","isNotificationEnabled":true}'
 
 curl -i -X POST http://localhost:3000/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"user@example.com","password":"Password123"}'
 
 curl -i -X POST http://localhost:3000/reports \
-  -H 'Content-Type: application/json' \
-  -d '{"address":"Blvd. Campestre 1203, León, Guanajuato","description":"Se observa una fuga continua junto a la banqueta.","severity":"high","reporterPhone":"4771234567"}'
+  -F 'address=Blvd. Campestre 1203, León, Guanajuato' \
+  -F 'description=Se observa una fuga continua junto a la banqueta.' \
+  -F 'severity=high' \
+  -F 'reporterPhone=4771234567' \
+  -F 'photo=@foto.jpg'
 
 curl -i http://localhost:3000/reports
 ```
 
-En PowerShell usa `curl.exe` y bodies desde archivos o `Invoke-RestMethod`; no grabes las contraseñas en pantalla. El [guion de video](docs/guion-video.md) incluye solicitudes que mantienen la contraseña de demostración en memoria.
+En PowerShell usa `curl.exe` y bodies desde archivos o `Invoke-RestMethod`; no grabes las contraseñas en pantalla. La [guía del segundo parcial](docs/parcial-ii.md) detalla las solicitudes en Postman y el orden del video.
 
 ## Pruebas, lint y build
 
@@ -173,9 +177,9 @@ npm run test:e2e
 npm audit
 ```
 
-`npm test` verifica DTOs, campos prohibidos y escape HTML sin requerir PostgreSQL. `test:e2e` inicia NestJS dentro del proceso de pruebas contra la base configurada en `.env`; exige migraciones aplicadas y sustituye solo EmailService para no mandar correos por cada prueba. Crea datos con identificadores aleatorios y al terminar elimina únicamente sus propios usuarios y reportes. Usa una base de práctica. La prueba del SMTP real se realiza por separado con la API iniciada y un POST /reports.
+`npm test` verifica DTOs, cargas multipart, límites, compensación de errores, campos prohibidos y escape HTML sin requerir PostgreSQL. `test:e2e` inicia NestJS dentro del proceso de pruebas contra la base configurada en `.env`; exige migraciones aplicadas y sustituye EmailService y StorageService. Crea datos con identificadores aleatorios y al terminar elimina únicamente sus propios usuarios y reportes. Usa una base de práctica. Las pruebas de S3 y SMTP reales se realizan por separado con la API iniciada y un POST /reports.
 
-Se fija `multer` 2.3.0 mediante `overrides` para resolver los avisos de seguridad de la versión transitiva incluida con NestJS 11. No se implementan endpoints de archivos.
+Se fija `multer` 2.5.0 mediante `overrides` para corregir los avisos de seguridad de versiones anteriores. NestJS 11 se actualiza a una revisión compatible. Las dependencias de ejecución y desarrollo quedan registradas en el lockfile.
 
 ## Solución de problemas
 
@@ -189,4 +193,8 @@ Se fija `multer` 2.3.0 mediante `overrides` para resolver los avisos de segurida
 | Correo no visible                         | Revisa spam y la cuenta destinataria. Aceptación SMTP y recepción son evidencias distintas.                                                                 |
 | Respuesta 400                             | Revisa formatos, severidad y campos extra. Las contraseñas no se normalizan ni recortan.                                                                    |
 | Correo ya registrado                      | Usa otro correo o inicia sesión. No borres usuarios para resolver un registro duplicado.                                                                    |
-| Generar migración no detecta cambios      | Es normal si las entidades ya coinciden con el esquema.                                                                                              
+| Generar migración no detecta cambios      | Es normal si las entidades ya coinciden con el esquema.                                                                                                     |
+
+## Segundo parcial
+
+Consulta la [guía y guion del segundo parcial](docs/parcial-ii.md) y sus [resultados de validación](docs/validacion-parcial-ii.md). La imagen Docker se construye, se prueba y se publica en GitHub Actions; no requiere Docker en el equipo de desarrollo.

@@ -30,6 +30,9 @@ export class Report {
   @Column({ type: 'varchar', length: 25 })
   reporterPhone: string;
 
+  @Column({ type: 'text', nullable: true })
+  photoUrl: string | null;
+
   @Column({ type: 'boolean', default: false })
   isResolved: boolean;
 

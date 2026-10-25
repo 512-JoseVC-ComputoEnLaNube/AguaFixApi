@@ -10,8 +10,8 @@ export class ReportsRepository {
     @InjectRepository(Report) private readonly repository: Repository<Report>,
   ) {}
 
-  create(dto: CreateReportDto): Promise<Report> {
-    return this.repository.save(this.repository.create(dto));
+  create(dto: CreateReportDto, photoUrl: string): Promise<Report> {
+    return this.repository.save(this.repository.create({ ...dto, photoUrl }));
   }
 
   findAll(): Promise<Report[]> {

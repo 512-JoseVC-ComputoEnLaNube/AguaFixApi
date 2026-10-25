@@ -9,11 +9,22 @@ import { EmailService } from '../src/email/email.service';
 import { createValidationPipe } from '../src/config/validation';
 import { User } from '../src/users/entities/user.entity';
 import { Report } from '../src/reports/entities/report.entity';
+import { StorageService } from '../src/storage/storage.service';
+
+const png = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+  'base64',
+);
 
 describe('AguaFixApi con PostgreSQL real y correo simulado', () => {
   let app: INestApplication;
   let database: DataSource;
   const sendEmail = jest.fn().mockResolvedValue(undefined);
+  const photoUrl = 'https://example.com/reports/e2e.png';
+  const storage = {
+    uploadFile: jest.fn().mockResolvedValue(photoUrl),
+    deleteFile: jest.fn(),
+  };
   const runId = randomBytes(8).toString('hex');
   const email = `e2e-${runId}@example.com`;
   const password = randomBytes(18).toString('hex');
@@ -30,6 +41,8 @@ describe('AguaFixApi con PostgreSQL real y correo simulado', () => {
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(EmailService)
       .useValue({ sendEmail })
+      .overrideProvider(StorageService)
+      .useValue(storage)
       .compile();
     app = module.createNestApplication();
     app.useGlobalPipes(createValidationPipe());
@@ -97,15 +110,23 @@ describe('AguaFixApi con PostgreSQL real y correo simulado', () => {
     sendEmail.mockClear();
     const response = await request(app.getHttpServer())
       .post('/reports')
-      .send(reportBody)
+      .field(reportBody)
+      .attach('photo', png, 'photo.png')
       .expect(201);
     reportIds.push(response.body.id as number);
     expect(response.body.isResolved).toBe(false);
     expect(response.body.createdAt).toBeDefined();
+    expect(response.body.photoUrl).toBe(photoUrl);
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(sendEmail.mock.calls[0][2]).toContain(
       '&lt;b&gt;Fuga&lt;/b&gt; &amp; banqueta',
     );
+    expect(sendEmail.mock.calls[0][2]).toContain(`<img src="${photoUrl}"`);
+    expect(
+      await database
+        .getRepository(Report)
+        .findOneByOrFail({ id: response.body.id }),
+    ).toMatchObject({ photoUrl });
     expect(
       await database
         .getRepository(Report)
@@ -117,16 +138,18 @@ describe('AguaFixApi con PostgreSQL real y correo simulado', () => {
     sendEmail.mockClear();
     await request(app.getHttpServer())
       .post('/reports')
-      .send({ ...reportBody, severity: 'urgent' })
+      .field({ ...reportBody, severity: 'urgent' })
+      .attach('photo', png, 'photo.png')
       .expect(400);
     await request(app.getHttpServer())
       .post('/reports')
-      .send({
+      .field({
         ...reportBody,
-        id: 900,
-        isResolved: true,
+        id: '900',
+        isResolved: 'true',
         createdAt: new Date().toISOString(),
       })
+      .attach('photo', png, 'photo.png')
       .expect(400);
     expect(sendEmail).not.toHaveBeenCalled();
     expect(
@@ -141,11 +164,13 @@ describe('AguaFixApi con PostgreSQL real y correo simulado', () => {
     const address = `${reportBody.address} fallo SMTP`;
     const response = await request(app.getHttpServer())
       .post('/reports')
-      .send({ ...reportBody, address })
+      .field({ ...reportBody, address })
+      .attach('photo', png, 'photo.png')
       .expect(503);
     reportIds.push(response.body.report.id as number);
     expect(response.body.code).toBe('REPORT_SAVED_NOTIFICATION_FAILED');
     expect(response.body.message).toContain('El reporte se guardó');
+    expect(response.body.report.photoUrl).toBe(photoUrl);
     expect(await database.getRepository(Report).countBy({ address })).toBe(1);
   });
 
@@ -154,6 +179,15 @@ describe('AguaFixApi con PostgreSQL real y correo simulado', () => {
       .get('/reports')
       .expect(200);
     const reports = response.body as Array<{ id: number; createdAt: string }>;
+    expect(response.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: reportIds[0],
+          photoUrl,
+          repairPhotoUrl: null,
+        }),
+      ]),
+    );
     expect(reports.map((report) => report.id)).toEqual(
       expect.arrayContaining(reportIds),
     );

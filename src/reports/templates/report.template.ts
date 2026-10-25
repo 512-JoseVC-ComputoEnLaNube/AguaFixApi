@@ -11,7 +11,10 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => entities[character]);
 }
 
-export function generateReportTemplate(dto: CreateReportDto): string {
+export function generateReportTemplate(
+  dto: CreateReportDto,
+  photoUrl: string,
+): string {
   const rows = [
     ['Dirección', dto.address],
     ['Descripción', dto.description],
@@ -30,6 +33,7 @@ export function generateReportTemplate(dto: CreateReportDto): string {
 <h1 style="font-size:24px;color:#075985;margin-top:0">Nuevo reporte de fuga de agua</h1>
 <p style="line-height:1.5">Se recibió un reporte ciudadano para atención de la cuadrilla de mantenimiento.</p>
 <table style="width:100%;border-collapse:collapse">${rows}</table>
+<p><img src="${escapeHtml(photoUrl)}" alt="Foto de la fuga de agua" style="display:block;width:100%;max-width:592px;height:auto;border-radius:8px"></p>
 <p style="font-size:12px;color:#475569;margin-bottom:0">AguaFixApi · Reportes ciudadanos</p>
 </div></body></html>`;
 }
