@@ -34,7 +34,7 @@ export class ReportsService {
     try {
       await this.emailService.sendEmail(
         envs.maintenanceEmail,
-        'Nuevo reporte de fuga de agua',
+        'Nuevo reporte de fuga de agua con foto',
         generateReportTemplate(dto, photoUrl),
       );
     } catch {
